@@ -1,0 +1,232 @@
+import sys, re, shutil, os
+
+welcomemsg = '''
+__  __      __   ___  __   __        ___    __  
+ / /  ` __ |__) |__  /  ` /  \ |\ | |__  | / _` 
+/_ \__,    |  \ |___ \__, \__/ | \| |    | \__> 
+                                                
+
+'''
+#Font name: JS Stick Letters
+
+root_paths = {}
+
+# the below are relative to whatever gets set in root_paths
+config_path = '/includes/configure.php'
+config_path_temp = '/includes/.configure.php_zc-reconfig-temp'
+config_path_backup = '/includes/.configure.php_zc-reconfig-backup'
+
+database_credentials = {'DB_SERVER':'', 'DB_SERVER_USERNAME':'', 'DB_SERVER_PASSWORD':'', 'DB_DATABASE':'false'}
+path_credentials = {'DIR_FS_CATALOG':os.getcwd()+'/', 'DIR_FS_LOGS':os.getcwd()+'/logs'}
+url_credentials = {'HTTP_SERVER':'','HTTPS_SERVER':'','HTTP_CATALOG_SERVER':'','HTTPS_CATALOG_SERVER':'','ENABLE_SSL':'false'}
+
+newlist = []
+
+fix_db_and_path = False
+fix_url = False
+
+def backup(i):
+	# backs up original wp-config file if a backup doesn't already exist
+
+	if os.path.exists(root_paths[i]+config_path_backup) == True:
+		print "Backup already exists for "+i
+	else:
+		print "Making a backup for "+ i
+		shutil.copyfile(root_paths[i]+config_path,root_paths[i]+config_path_backup)
+
+
+def get_root_paths():
+
+	# Get the full paths to the root of the zc install and the zc admin folder (since it is recommended the user change it to something else)
+	# stuff them into array elements: 
+	# root_paths['root'] = '/path/to/zc/install'
+	# root_paths['root'] = '/path/to/zc/install/admindir/'
+
+	root_paths['root'] = os.getcwd()
+
+	for directory in os.walk(root_paths['root']):
+		if 'includes' in directory[1]:
+			if 'logoff.php' in directory[2]:
+				admindirname = re.search('.*/(.*)',directory[0])
+				root_paths['admin'] = root_paths['root']+'/'+admindirname.group(1)
+			elif 'whos_online.php' in directory[2]:
+				admindirname = re.search('.*/(.*)',directory[0])
+				root_paths['admin'] = root_paths['root']+'/'+admindirname.group(1)
+
+
+def set_database_credentials():
+	valid_length = False
+
+	while not valid_length:
+		input = raw_input("Enter new DB_NAME, DB_USER ,DB_PASS and [DB_HOST]:\n> ")
+		newlist = input.split(' ')
+		if len(newlist) >= 3:
+			valid_length = True
+		else:
+			print "Invalid number of arguments"
+
+	# Checking for appropriate number of arguments
+	if len(newlist) < 4:
+		database_credentials['DB_DATABASE'] = newlist[0]
+		database_credentials['DB_SERVER_USERNAME'] = newlist[1]
+		database_credentials['DB_SERVER_PASSWORD'] = newlist[2]
+		database_credentials['DB_SERVER'] = 'localhost' #If only 3 arguments supplied, default to 'localhost' 
+	else:	
+		database_credentials['DB_DATABASE'] = newlist[0]
+		database_credentials['DB_SERVER_USERNAME'] = newlist[1]
+		database_credentials['DB_SERVER_PASSWORD'] = newlist[2]
+		database_credentials['DB_SERVER'] = newlist[3]
+
+def set_url_credentials():
+
+	## this may change later, I'm still unsure as of how exactly zc and osc do their https stuff. 
+
+	newurl = raw_input("New domain name:\n> ")
+
+	
+
+	has_http = re.search('^(https?://)', newurl)
+
+	if has_http:
+		newurl = str.replace(newurl, has_http.group(1), '')
+
+		if has_http.group(1) == 'https://':
+			prefix = 'https://'
+			url_credentials['ENABLE_SSL'] = 'true'
+		else:
+			prefix = 'http://'
+	else:
+		prefix = 'http://'
+
+	# old_credential = re.search('.*[\'](.*)[\'].*',line)
+	has_trailing_slash = re.search('(.*)/$',newurl)
+	if has_trailing_slash:
+		newurl = has_trailing_slash.group(1)
+
+	url_credentials['HTTP_SERVER'] = 'http://'+newurl
+	url_credentials['HTTPS_SERVER'] = prefix+newurl
+	url_credentials['HTTP_CATALOG_SERVER'] = 'http://'+newurl
+	url_credentials['HTTPS_CATALOG_SERVER'] = prefix+newurl
+
+# url_credentials = {'HTTP_SERVER':'','HTTPS_SERVER':'','HTTP_CATALOG_SERVER':'','HTTPS_CATALOG_SERVER':''}
+
+
+def menu():
+	
+
+	menu_selection_made = False
+	fix_db_and_path = False
+	fix_url = False
+
+	while not menu_selection_made:
+		input = raw_input("Hey what do you wanna do?\n1) DBs\n2) URLs\n3) Both\n> ")
+		if input == '1':
+			menu_selection_made = True
+			set_database_credentials()
+			fix_db_and_path = True
+			print "Done fixing DBs! (supposedly)"
+		elif input == '2':
+			menu_selection_made = True
+			set_url_credentials()			
+			fix_url = True
+		elif input == '3':
+			menu_selection_made = True
+			set_database_credentials()
+			set_url_credentials()
+			fix_db_and_path = True
+			fix_url = True
+		else:
+			print "Invalid Response"
+
+	fix_all_the_things(fix_db_and_path, fix_url)
+			
+
+
+def fix_all_the_things(yes_db_path, yes_url):
+	db_creds_set = False
+	url_creds_set = False
+
+	# print fix_db_and_path
+	# print fix_url
+
+	print "\n\n"
+
+	if yes_db_path:
+		for i, j in path_credentials.iteritems():
+			print i+': '+j
+
+		for i, j in database_credentials.iteritems():
+			print i+': '+j
+
+	if yes_url:
+		# print "going to fix url"
+		for i, j in url_credentials.iteritems():
+			print i+': '+j
+
+	print "\n\n"
+
+
+	for i in root_paths:
+		backup(i)
+		cfgfile = open(root_paths[i]+config_path, 'r')
+		tmpfile = open(root_paths[i]+config_path_temp, 'w')
+
+		for line in cfgfile:
+
+			if 'define(' in line:
+
+				# print line
+				if yes_db_path:
+
+					# print "going to fix db and path"
+					credential_type = re.search('.*[\'](.*)[\'][,]',line)
+ 					credential_type = credential_type.group(1)
+					for types, creds in path_credentials.iteritems():
+						if types == credential_type:
+							old_credential = re.search('.*[\'](.*)[\'].*',line)
+	 						old_credential = old_credential.group(1)
+							line = str.replace(line, old_credential, creds)
+					for types, creds in database_credentials.iteritems():
+						if types == credential_type:
+							old_credential = re.search('.*[\'](.*)[\'].*',line)
+	 						old_credential = old_credential.group(1)
+							line = str.replace(line, old_credential, creds)
+
+
+					# if db_creds_set == True:
+					# 	print "yay"
+				if yes_url:
+					# print "going to fix url"
+					credential_type = re.search('.*[\'](.*)[\'][,]',line)
+ 					credential_type = credential_type.group(1)
+ 					for types, creds in url_credentials.iteritems():
+							if types == credential_type:
+								# print 't == cred_type'
+
+								old_credential = re.search('.*[\'](.*)[\'].*',line)
+		 						old_credential = old_credential.group(1)
+		 						# print 'oc:',old_credential
+		 						# print 'creds:',creds
+ 								line = str.replace(line, old_credential, creds)
+ 								# print '-----line:',line
+ 			# print 'line:',line
+ 			tmpfile.write(line)
+
+		cfgfile.close()
+		tmpfile.close()
+
+	shutil.move(root_paths[i]+config_path_temp,root_paths[i]+config_path)
+
+
+
+
+
+
+print welcomemsg
+get_root_paths()
+menu()
+
+
+
+# files consists of: 
+# (path, something blank, array of files]
